@@ -178,6 +178,7 @@ void loop() {
   while (Serial.available() == 0) {};
   Serial.read();
 
+  start_time = millis();
   uint16_t x = 0;
   uint16_t y = 0;
   for (i = 0; i < vs23.height(); i++)
@@ -196,14 +197,25 @@ void loop() {
     for (j = x; j < 3 * vs23.width()/8; j++)
       vs23.setPixelRgb (j, i, 0x00, 0x00, 0xff);
 
-  x = 3 * vs23.width()/8;
-  y = 0;
-  for (i = 0; i < vs23.height(); i++)
-    for (j = x; j < 4 * vs23.width()/8; j++)
-      vs23.setPixelRgb (j, i,
-			tms9918[cyan].r,
-			tms9918[cyan].g,
-			tms9918[cyan].b); //cyan
+  for (int k = 0; k < 15; k++)
+    {
+      x = 3 * vs23.width()/8;
+      y = 0;
+      for (i = 0; i < vs23.height(); i++)
+  	for (j = x; j < 4 * vs23.width()/8; j++)
+  	  vs23.setPixelRgb (j, i,
+  			    tms9918[k].r,
+  			    tms9918[k].g,
+  			    tms9918[k].b);
+      while (Serial.available() == 0) {};
+      Serial.read();
+    }
+
+
+  current_time = millis();
+
+  Serial.print (F("RGB bars duration [msec]"));
+  Serial.println (current_time - start_time);
 
   // more colour bars
   Serial.println(F("4 YUV Pixel [press key]") );
@@ -212,26 +224,38 @@ void loop() {
   y = 0;
   for (i = y; i < vs23.height(); i++)
     for (j = x; j < 5 * vs23.width()/8; j++)
-      vs23.setPixelYuv (j, i, 0x24);
+      vs23.setPixelYuv (j, i, 169); //0x24
 
   x = 5 * vs23.width()/8;
   y = 0;
   for (i = y; i < vs23.height(); i++)
     for (j = x; j < 6 * vs23.width()/8; j++)
-      vs23.setPixelYuv (j, i, 0x94);
+      vs23.setPixelYuv (j, i, 155); //0x94
 
   x = 6 * vs23.width()/8;
   y = 0;
   for (i = y; i < vs23.height(); i++)
     for (j = x; j < 7 * vs23.width()/8; j++)
-      vs23.setPixelYuv (j, i, 0x54);
+      vs23.setPixelYuv (j, i, 83); //0x54
 
-  x = 7 * vs23.width()/8;
-  y = 0;
-  for (i = y; i < vs23.height(); i++)
-    for (j = x; j < 8 * vs23.width()/8; j++)
-      vs23.setPixelYuv (j, i, 0xbf);
-
+//  while (1)
+//    {
+//  while (Serial.available() == 0) {};
+//      uint8_t a = Serial.read();
+//      uint8_t b = Serial.read();
+//      uint8_t c = Serial.read();
+//
+//      uint8_t read = (a - '0') * 100 + (b - '0') * 10 + (c - '0');
+//      Serial.println (read, DEC);
+//  while (Serial.available() == 0) {};
+//      Serial.read();
+//
+//      x = 7 * vs23.width()/8;
+//      y = 0;
+//      for (i = y; i < vs23.height(); i++)
+//	for (j = x; j < 8 * vs23.width()/8; j++)
+//	  vs23.setPixelYuv (j, i, read); //0xbf
+//    };
   Serial.println(F("End of test! [Restart press key]"));
   delay(1);
   while (Serial.available() == 0) {};
