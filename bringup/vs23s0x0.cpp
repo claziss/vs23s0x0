@@ -100,9 +100,9 @@ static const struct video_mode_t modes_pal[] = {
   {436, 216, 33, 29, 3, 8, 11000000},
   {320, 216, 33, 15, 5, 8, 11000000},	// VS23 NTSC demo
   {320, 200, 41, 15, 5, 8, 14000000},	// (M)CGA, Commodore et al.
-  {256, 224, 32, 20, 6, 8, 15000000},	// SNES
-  {256, 192, 42, 20, 6, 8, 11000000},	// MSX, Spectrum, NDS
-  {160, 200, 41, 15, 10, 8, 11000000},	// Commodore/PCjr/CPC
+  {256, 224, 32, 20, 6, 8, 15000000},	// SNES +
+  {256, 192, 42, 20, 6, 8, 11000000},	// MSX, Spectrum, NDS +
+  {160, 200, 41, 15, 10, 8, 11000000},	// Commodore/PCjr/CPC +
   // multi-color
   // "Overscan modes" are actually underscan on PAL.
   {352, 240, 24, 8, 5, 8, 11000000},	// PCE overscan (barely)
@@ -145,7 +145,7 @@ static inline bool blockFinished (void)
 
 #if 0
 static void rgb_to_hsv(uint8_t r, uint8_t g, uint8_t b,
-                       int *h, int *s, int *v) {
+		       int *h, int *s, int *v) {
   *v = max(max(r, g), b);
   if (*v == 0) {
     *s = 0;
@@ -170,6 +170,26 @@ static void rgb_to_hsv(uint8_t r, uint8_t g, uint8_t b,
 }
 #endif
 
+#if 1
+#define YYRGB(R, G, B) (( (  76 * R + 150 * G +  29 * B + 128) >> 8) + 0)
+#else
+#define YRGB(r,g,b) (( 0.299   * (r) + 0.587   * (g) + 0.114  *(b)))
+#endif
+
+#define ROW_BW 0
+#define ROW_B 4
+#define ROW_G 13
+#define ROW_R 14
+
+#define ROW_RB 2
+#define ROW_RG 10
+
+#define ROW_BR 4
+#define ROW_BG 5
+
+#define ROW_GB 1
+#define ROW_GR 8
+
 static uint8_t
 colorFromRgb (uint8_t r, uint8_t g, uint8_t b)
 {
@@ -178,23 +198,17 @@ colorFromRgb (uint8_t r, uint8_t g, uint8_t b)
   uint8_t lo = 0;
   uint8_t hi = 255;
 
-
   //1. FIXME! add color correction.
   //2. FIXME! add 8 locations cache algorithm.
-
-  // Not necessary if table's extremes are zero or 0xffffff
-  rgb = max (pal[0].rgb, rgb);
-  rgb = min (pal[255].rgb, rgb);
 
   while (hi >= lo)
     {
       mid = lo + ((hi - lo) >> 1);
 
-      uint8_t lent = (mid == 0) ? 0 : mid - 1;
       if (rgb == pal[mid].rgb)
-	return pal[mid].yuv;
-      else if ((rgb > pal[lent].rgb) && (rgb < pal[mid].rgb))
-	return min(pal[mid].yuv - rgb, rgb - pal[lent].rgb);
+	{
+	  return pal[mid].yuv;
+	}
 
       if (rgb > pal[mid].rgb)
 	lo = mid + 1;
@@ -202,7 +216,36 @@ colorFromRgb (uint8_t r, uint8_t g, uint8_t b)
 	hi = mid - 1;
     }
 
-  return pal[mid].yuv;
+  uint8_t hue = (YYRGB(r, g, b) >> 4) & 0x0f;;
+
+  if (r >= b && b > g)
+    return (ROW_RB * 16 + hue);
+
+  if (r >= g && g > b)
+    return (ROW_RG * 16 + hue);
+
+  if (b >= r && r > g)
+    return (ROW_BR * 16 + hue);
+
+  if (b >= g && g > r)
+    return (ROW_BG * 16 + hue);
+
+  if (g >= b && b > r)
+    return (ROW_GB * 16 + hue);
+
+  if (g >= r && r > b)
+    return (ROW_GR * 16 + hue);
+
+  if (r > b && r > g)
+    return (ROW_R * 16 + hue);
+
+  if (b > r && b > g)
+    return (ROW_B * 16 + hue);
+
+  if (g > r && g > b)
+    return (ROW_G * 16 + hue);
+
+  return (ROW_BW * 16 + hue);
 }
 
 // ---------------------------------------------------------------------------
@@ -385,21 +428,10 @@ VS23S0x0::setPixelRgb (uint16_t xpos, uint16_t ypos, uint8_t r, uint8_t g,
 {
   uint8_t pixdata = colorFromRgb(r, g, b);
 
-#if 0
-  {
-    uint16_t wordaddress;
+  uint32_t byteaddress;
 
-    wordaddress = PICLINE_WORD_ADDRESS(ypos) + xpos;
-    SpiRamWriteWord(wordaddress, pixdata);
-  }
-#else
-  {
-    uint32_t byteaddress;
-
-    byteaddress = pixelAddr(xpos, ypos);
-    SpiRamWriteByte(byteaddress, pixdata);
-  }
-#endif
+  byteaddress = pixelAddr(xpos, ypos);
+  SpiRamWriteByte(byteaddress, pixdata);
 }
 
 void
@@ -419,24 +451,24 @@ VS23S0x0::videoInit (uint8_t channel)
   uint16_t i, j;
   uint32_t w;
 
-#ifdef DEBUG
+#if 0
   uint16_t linelen = PLLCLKS_PER_LINE;
-  Serial.printf("Linelen: %d PLL clks\n", linelen);
-  printf("Picture line area is %d x %d\n", PICX, PICY);
-  printf("Upper left corner is point (0,0) and lower right corner (%d,%d)\n",
-	 PICX - 1, PICY - 1);
-  printf("Memory space available for picture bytes %ld\n",
-	 131072 - PICLINE_START);
-  printf("Free bytes %ld\n",
-	 131072 - PICLINE_START - (PICX + BEXTRA) * PICY * PICBITS / 8);
-  printf("Picture line %d bytes\n", PICLINE_LENGTH_BYTES + BEXTRA);
-  printf("Picture length, %d color cycles\n", PICLENGTH);
-  printf("Picture pixel bits %d\n", PICBITS);
-  printf("Start pixel %x\n", (STARTPIX - 1));
-  printf("End pixel %x\n", (ENDPIX - 1));
-  printf("Index start address %x\n", INDEX_START_BYTES);
-  printf("Picture line 0 address %lx\n", piclineByteAddress(0));
-  printf("Last line %d\n", PICLINE_MAX);
+  Serial.print("Linelen: %d PLL clks"); Serial.println (linelen, DEC);
+  Serial.print("Picture line area is %d x %d\n"); Serial.println (PICX, DEC); Serial.println (PICY, DEC);
+  //  Serial.printf("Upper left corner is point (0,0) and lower right corner (%d,%d)\n",
+  //	 PICX - 1, PICY - 1);
+  Serial.print("Memory space available for picture bytes %ld\n");
+  Serial.println (131072 - PICLINE_START, DEC);
+  Serial.print("Free bytes %ld\n");
+  Serial.println (131072 - PICLINE_START - (PICX + BEXTRA) * PICY * PICBITS / 8, DEC);
+  //Serial.printf("Picture line %d bytes\n", PICLINE_LENGTH_BYTES + BEXTRA);
+  //Serial.printf("Picture length, %d color cycles\n", PICLENGTH);
+  //Serial.printf("Picture pixel bits %d\n", PICBITS);
+  //Serial.printf("Start pixel %x\n", (STARTPIX - 1));
+  //Serial.printf("End pixel %x\n", (ENDPIX - 1));
+  //Serial.printf("Index start address %x\n", INDEX_START_BYTES);
+  //Serial.printf("Picture line 0 address %lx\n", piclineByteAddress(0));
+  //Serial.printf("Last line %d\n", PICLINE_MAX);
 #endif
 
   // Disable video generation
@@ -885,7 +917,7 @@ VS23S0x0::begin (bool interlace, bool lowpass, uint8_t system)
 
   m_line_adjust = 0;
 
-  setMode(0);
+  setMode(4);
 }
 
 void VS23S0x0::reset()
@@ -915,28 +947,28 @@ VS23S0x0::currentLine()
 static uint32_t
 init_timer0 (void)
 {
-//  aux_reg_write (ARC_V2_TMR1_LIMIT, -1);
-//  aux_reg_write (ARC_V2_TMR1_CONTROL, 2);
-//  aux_reg_write (ARC_V2_TMR1_COUNT, 0);
+  aux_reg_write (ARC_V2_TMR1_LIMIT, -1);
+  aux_reg_write (ARC_V2_TMR1_CONTROL, 2);
+  aux_reg_write (ARC_V2_TMR1_COUNT, 0);
   return 0;
 }
 
 void VS23S0x0::calibrateVsync()
 {
   uint32_t now, now2, cycles;
-  //while (currentLine() != 100) {};
+  while (currentLine() != 100) {};
   now = init_timer0 ();
-  //while (currentLine() == 100) {};
-  //while (currentLine() != 100) {};
+  while (currentLine() == 100) {};
+  while (currentLine() != 100) {};
   for (;;) {
-    now2 = 0; // aux_reg_read (ARC_V2_TMR1_COUNT);
+    now2 = aux_reg_read (ARC_V2_TMR1_COUNT);
     cycles = now2 - now;
     if (abs((int)m_cycles_per_frame - (int)cycles) < 80000)
       break;
     m_cycles_per_frame = cycles;
     now = now2;
-    //while (currentLine() == 100) {};
-    //while (currentLine() != 100) {};
+    while (currentLine() == 100) {};
+    while (currentLine() != 100) {};
   }
   m_cycles_per_frame = cycles;
 }
@@ -953,15 +985,17 @@ VS23S0x0::setMode (uint8_t mode)
   videoInit(0);
   calibrateVsync();
 
-#if 0
+#if 1
   if (m_pal && F_CPU / m_cycles_per_frame < 45) {
     // We are in PAL mode, but the hardware has an NTSC crystal.
-    m_pal = false;
-    goto retry;
+    //m_pal = false;
+    //goto retry;
+    Serial.println ("NTSC board, PAL mode");
   } else if (!m_pal && F_CPU / m_cycles_per_frame > 70) {
     // We are in NTSC mode, but the hardware has a PAL crystal.
-    m_pal = true;
-    goto retry;
+    //m_pal = true;
+    //goto retry;
+    Serial.println ("PAL board, NTSC mode");
   }
 #endif
 
