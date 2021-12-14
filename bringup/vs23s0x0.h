@@ -298,7 +298,13 @@ class VS23S0x0
   void videoInit (uint8_t channel = 0);
   void SetLineIndex(uint16_t line, uint16_t wordAddress);
   void SetPicIndex(uint16_t line, uint32_t byteAddress, uint16_t protoAddress);
-
+  void setBorder(uint8_t y, uint8_t uv);
+  void MoveBlock (uint16_t x_src, uint16_t y_src, uint16_t x_dst,
+		  uint16_t y_dst, uint8_t width, uint8_t height,
+		  uint8_t dir);
+  void blitRect (uint16_t x_src, uint16_t y_src, uint16_t x_dst, uint16_t y_dst,
+		 uint8_t width, uint8_t height);
+  void fillRectangle (uint16_t, uint16_t, uint16_t, uint16_t, uint8_t);
   void reset();
 
   inline void setInterlace(bool interlace) {
@@ -343,6 +349,8 @@ class VS23S0x0
   }
 
  private:
+  void setBorder (uint8_t y, uint8_t uv, uint16_t dx, uint16_t width);
+
   bool m_vsync_enabled;
   uint32_t m_cycles_per_frame;
   const struct video_mode_t *m_current_mode;

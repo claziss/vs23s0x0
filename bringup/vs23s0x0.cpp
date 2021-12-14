@@ -125,6 +125,7 @@ struct palette {
 static const struct palette pal[] = {
   #include "P-EE-A22-B22-Y44-N10.h"
 };
+#undef COLOR
 
 static inline void vs23Select()
 {
@@ -143,32 +144,17 @@ static inline bool blockFinished (void)
   return VS23_MBLOCK;
 }
 
-#if 0
-static void rgb_to_hsv(uint8_t r, uint8_t g, uint8_t b,
-		       int *h, int *s, int *v) {
-  *v = max(max(r, g), b);
-  if (*v == 0) {
-    *s = 0;
-    *h = 0;
-    return;
-  }
-  int m = min(min(r, g), b);
-  *s = 255 * (*v - m) / *v;
-  if (*v == m) {
-    *h = 0;
-  } else {
-    int d = *v - m;
-    if (*v == r)
-      *h = 60 * (g - b) / d;
-    else if (*v == g)
-      *h = 120 + 60 * (b - r) / d;
-    else
-      *h = 240 + 60 * (r - g) / d;
-  }
-  if (*h < 0)
-    *h += 360;
-}
+static inline void startBlockMove (void)
+{
+#ifdef DEBUG_BM
+    if (!blockFinished()) {
+      Serial.println("overmove!!");
+    }
 #endif
+    VS23_SELECT;
+    SPI.transfer (BLOCKMV_S);
+    VS23_DESELECT;
+}
 
 #if 1
 #define YYRGB(R, G, B) (( (  76 * R + 150 * G +  29 * B + 128) >> 8) + 0)
@@ -375,6 +361,38 @@ SpiRamWriteWord (uint16_t waddress, uint16_t data)
   vs23Deselect();
 }
 
+static void
+SpiRamWriteBMCtrl (uint16_t opcode, uint16_t data1,
+		   uint16_t data2, uint16_t data3)
+{
+  static uint8_t LSB = 0xE0;
+  uint8_t req[6] = { (uint8_t)opcode, (uint8_t)(data1 >> 8),
+    (uint8_t)data1, (uint8_t)(data2 >> 8),
+    (uint8_t)data2, (uint8_t)data3 };
+
+  vs23Select();
+  //SPI.writeBytes(req, LSB == data3 ? 5 : 6);
+  for(int i = 0; i < (LSB == data3 ? 5 : 6); i++)
+    SPI.transfer (req[i]);
+  vs23Deselect();
+
+  LSB = data3;
+}
+
+static void
+SpiRamWriteBM2Ctrl (uint16_t data1, uint16_t data2,
+		    uint16_t data3)
+{
+  uint8_t req[5] = { BLOCKMVC2, (uint8_t)(data1 >> 8), (uint8_t)data1,
+    (uint8_t)data2, (uint8_t)data3 };
+  // Serial.printf("%02x <= %04x%02x%02xh\n",opcode,data1,data2,data3);
+  vs23Select();
+  //SPI.writeBytes(req, 5);
+  for(int i = 0; i < 5; i++)
+    SPI.transfer (req[i]);
+  vs23Deselect();
+}
+
 // ---------------------------------------------------------------------------
 // Equivalent to _protoline
 // Set proto type picture line indexes
@@ -441,6 +459,21 @@ VS23S0x0::setPixelYuv (uint16_t xpos, uint16_t ypos, uint8_t color)
   SpiRamWriteByte(byteaddress, color);
 }
 
+void
+VS23S0x0::setBorder (uint8_t y, uint8_t uv, uint16_t dx, uint16_t width)
+{
+  uint32_t w = PROTOLINE_WORD_ADDRESS(0) + BLANKEND + dx;
+  for (int i = 0; i < width; i++) {
+    SpiRamWriteWord((uint16_t)w++, (uv << 8) | (y + 0x66));
+  }
+}
+
+void
+VS23S0x0::setBorder(uint8_t y, uint8_t uv)
+{
+  setBorder (y, uv, 0, FRPORCH - BLANKEND);
+}
+
 // ---------------------------------------------------------------------------
 // Equivalent to Config
 // Initialize the VS32S0x0 chip
@@ -494,8 +527,9 @@ VS23S0x0::videoInit (uint8_t channel)
   SpiRamWriteRegister(LINELEN, (PLLCLKS_PER_LINE));
   // 9. Define where Line Indexes are stored in memory
   SpiRamWriteRegister(INDEXSTART, INDEX_START_LONGWORDS);
+
   // 10. Enable the PAL Y lowpass filter, not used in NTSC
-  // SpiRamWriteBMCtrl(BLOCKMVC1,0,0,BLOCKMVC1_PYF);
+  SpiRamWriteBMCtrl(BLOCKMVC1,0,0,BLOCKMVC1_PYF);
   // 11. Set all line indexes to point to protoline 0 (which by
   // definition is in the beginning of the SRAM)
   for (i = 0; i < TOTAL_LINES; i++) {
@@ -673,9 +707,9 @@ VS23S0x0::videoInit (uint8_t channel)
 
   } else {	// interlace
 
-		// Protolines for progressive NTSC, here is not created a protoline
-		// corresponding to interlace protoline 2.
-		// Construct protoline 0
+    // Protolines for progressive NTSC, here is not created a
+    // protoline corresponding to interlace protoline 2.  Construct
+    // protoline 0
     w = PROTOLINE_WORD_ADDRESS(0);	// Could be w=0 because proto 0 always
     // starts at address 0
     for (i = 0; i <= COLORCLKS_PER_LINE; i++) {
@@ -683,7 +717,7 @@ VS23S0x0::videoInit (uint8_t channel)
     }
 
     // Set the color level to black
-    //FIXME setBorder(0, 0);
+    setBorder(0, 0);
 
     // Set HSYNC
     w = PROTOLINE_WORD_ADDRESS(0);
@@ -1010,4 +1044,100 @@ VS23S0x0::setMode (uint8_t mode)
   delay(160);
 
   return true;
+}
+
+//--------------------------------------
+// Move mem bloks using internal blither.
+void
+VS23S0x0::MoveBlock (uint16_t x_src, uint16_t y_src,
+		     uint16_t x_dst, uint16_t y_dst,
+		     uint8_t width, uint8_t height,
+		     uint8_t dir)
+{
+  static uint8_t last_dir = 0;
+
+  // stay in the first line of the source rectangle
+  // if bit 1 of dir is set
+  uint8_t inc_src = (dir & 2) ? 0 : 1;
+  dir &= 1;
+
+#ifdef DEBUG
+  if (x_src < 0 || x_dst < 0 || x_src + width > m_current_mode->x ||
+      x_dst + width > m_current_mode->x || y_src < 0 || y_dst < 0 ||
+      y_src + height > lastLine() || y_dst + height > lastLine()) {
+    Serial.printf("BADMOV %dx%d %d,%d -> %d,%d\n", width, height,
+		  x_src, y_src, x_dst, y_dst);
+  }
+#endif
+  uint32_t byteaddress1 = pixelAddr(x_dst, y_dst);
+  uint32_t byteaddress2 = pixelAddr(x_src, y_src);
+
+  // If the last move was a reverse one, we have to wait until it's
+  // finished before we can set the new addresses.
+  if (last_dir)
+    while (!blockFinished()) {
+    }
+  SpiRamWriteBMCtrl (BLOCKMVC1, byteaddress2 >> 1, byteaddress1 >> 1,
+		     ((byteaddress1 & 1) << 1) | ((byteaddress2 & 1) << 2)
+		     | dir | lowpass());
+  if (!last_dir)
+    while (!blockFinished()) {
+    }
+  SpiRamWriteBM2Ctrl ((m_pitch - width) * inc_src, width, height - 1);
+  startBlockMove();
+  last_dir = dir;
+}
+
+void
+VS23S0x0::blitRect (uint16_t x_src, uint16_t y_src,
+		    uint16_t x_dst, uint16_t y_dst,
+		    uint8_t width, uint8_t height)
+{
+  if ((y_dst > y_src && y_dst < y_src + height) ||
+      (y_src == y_dst && x_dst > x_src && x_dst < x_src + width))
+    MoveBlock(x_src + width - 1, y_src + height - 1,
+	      x_dst + width - 1, y_dst + height - 1,
+	      width, height, 1);
+  else
+    MoveBlock(x_src, y_src, x_dst, y_dst, width, height, 0);
+}
+
+void
+VS23S0x0::fillRectangle (uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2,
+			 uint8_t color)
+{
+  const int seg_width = 8;
+  int width = x2 - x1;
+  const int height = y2 - y1;
+  const int width_segs = width / seg_width;
+
+  // fill top pixels with background
+  while (!blockFinished()) {}
+  // line at most two chars then duplicate with blitter
+  int preset = seg_width + ((width_segs == 1) ? 0 : seg_width);
+
+  //   gfx.drawLine(x1, y1, x1 + preset - 1, y1, color);
+  for (int i = x1; i < (x1 + preset - 1); i++)
+    setPixelYuv (i, y1, color);
+
+  // Apparently source and destination address have to be
+  // at least 4 bytes apart. Alignment is not an issue.
+  if (width_segs > 2)
+    {
+      int adjust = width - width_segs * seg_width;
+      int length = width_segs - ((adjust) ? 1 : 2);
+      int target = x1 + seg_width + ((adjust) ? adjust : seg_width);
+
+      // special mode: skip disabled
+      MoveBlock (x1, y1, target, y1, seg_width, length, 2);
+    }
+
+  // duplicate top line
+  while (width >= 256)
+    {
+      MoveBlock(x1, y1, x1, y1 + 1, 240, height - 1, 0);
+      x1 += 240;       // we can do 255 but we need
+      width -= 240;    // at least 5 for the tail below
+    }
+  MoveBlock(x1, y1, x1, y1 + 1, width, height - 1, 0);
 }
