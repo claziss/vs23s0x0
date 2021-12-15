@@ -243,15 +243,18 @@ VS23S0x0::SpiRamReadRegister (uint16_t opcode)
 {
   uint16_t result;
 
+#ifdef SPI_BYTE
   vs23Select();
   SPI.transfer(opcode);
-#if 1
   result = SPI.transfer(0) << 8;
   result |= SPI.transfer(0);
-#else
-  result = SPI.transfer16 (0);
-#endif
   vs23Deselect();
+#else
+  vs23Select();
+  SPI.transfer(opcode);
+  result = SPI.transfer16 (0);
+  vs23Deselect();
+#endif
   return result;
 }
 
@@ -278,12 +281,17 @@ SpiRamReadRegister8 (uint16_t opcode)
 void
 VS23S0x0::SpiRamWriteRegister (uint16_t opcode, uint16_t data)
 {
-  // Serial.printf("%02x <= %04xh\n",opcode,data);
+#ifdef SPI_BYTE
   vs23Select();
   SPI.transfer(opcode);
   SPI.transfer(data >> 8);
   SPI.transfer((uint8_t) data);
   vs23Deselect();
+#else
+  vs23Select();
+  SPI.transfer24 ((opcode << 16) | data);
+  vs23Deselect();
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -293,11 +301,17 @@ VS23S0x0::SpiRamWriteRegister (uint16_t opcode, uint16_t data)
 static void
 SpiRamWriteByteRegister (uint16_t opcode, uint16_t data)
 {
-  // Serial.printf("%02x <= %02xh\n",opcode,data);
+#ifdef SPI_BYTE
   vs23Select();
   SPI.transfer(opcode);
   SPI.transfer((uint8_t) data);
   vs23Deselect();
+#else
+  vs23Select();
+  SPI.transfer16 ((opcode << 8) | (data & 0xff));
+  vs23Deselect();
+#endif
+
 }
 
 // ---------------------------------------------------------------------------
@@ -308,6 +322,7 @@ static void
 SpiRamWriteProgram (uint16_t opcode, uint16_t data1, uint16_t data2)
 {
   // Serial.printf("PROG:%04x%04xh\n",data1,data2);
+#ifdef SPI_BYTE
   vs23Select();
   SPI.transfer(opcode);
   SPI.transfer(data1 >> 8);
@@ -315,6 +330,12 @@ SpiRamWriteProgram (uint16_t opcode, uint16_t data1, uint16_t data2)
   SPI.transfer(data2 >> 8);
   SPI.transfer((uint8_t) data2);
   vs23Deselect();
+#else
+  vs23Select();
+  SPI.transfer (opcode);
+  SPI.transfer32 ((data1 << 16) | data2);
+  vs23Deselect();
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -323,8 +344,9 @@ SpiRamWriteProgram (uint16_t opcode, uint16_t data1, uint16_t data2)
 static void
 SpiRamWriteByte (uint32_t address, uint8_t data)
 {
-  uint8_t req[5];
   // address = address + (channel * ch_block);
+#ifdef SPI_BYTE
+  uint8_t req[5];
 
   req[0] = WRITE_SRAM; //0x02
   req[1] = address >> 16;
@@ -336,6 +358,12 @@ SpiRamWriteByte (uint32_t address, uint8_t data)
   for (int i = 0; i < 5; i++)
     SPI.transfer (req[i]);
   vs23Deselect();
+#else
+  vs23Select();
+  SPI.transfer32 (WRITE_SRAM << 24 | (address & 0x00ffffff));
+  SPI.transfer (data);
+  vs23Deselect();
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -344,9 +372,11 @@ SpiRamWriteByte (uint32_t address, uint8_t data)
 static void
 SpiRamWriteWord (uint16_t waddress, uint16_t data)
 {
-  uint8_t req[6];
-  uint32_t address = (uint32_t) waddress << 1;
   // address = address + (channel * ch_block);
+  uint32_t address = (uint32_t) waddress << 1;
+
+#ifdef SPI_BYTE
+  uint8_t req[6];
 
   req[0] = WRITE_SRAM; //0x02
   req[1] = address >> 16;
@@ -359,6 +389,12 @@ SpiRamWriteWord (uint16_t waddress, uint16_t data)
   for (int i = 0; i < 6; i++)
     SPI.transfer (req[i]);
   vs23Deselect();
+#else
+  vs23Select();
+  SPI.transfer32 (WRITE_SRAM << 24 | (address & 0x00ffffff));
+  SPI.transfer16 (data);
+  vs23Deselect();
+#endif
 }
 
 static void
@@ -385,7 +421,6 @@ SpiRamWriteBM2Ctrl (uint16_t data1, uint16_t data2,
 {
   uint8_t req[5] = { BLOCKMVC2, (uint8_t)(data1 >> 8), (uint8_t)data1,
     (uint8_t)data2, (uint8_t)data3 };
-  // Serial.printf("%02x <= %04x%02x%02xh\n",opcode,data1,data2,data3);
   vs23Select();
   //SPI.writeBytes(req, 5);
   for(int i = 0; i < 5; i++)
@@ -1031,6 +1066,7 @@ VS23S0x0::setMode (uint8_t mode)
     //goto retry;
     Serial.println ("PAL board, NTSC mode");
   }
+  Serial.println (m_cycles_per_frame, DEC);
 #endif
 
   // Start the new frame at the end of the visible screen plus a little extra.
@@ -1049,7 +1085,8 @@ VS23S0x0::setMode (uint8_t mode)
 //--------------------------------------
 // Move mem bloks using internal blither.
 void
-VS23S0x0::MoveBlock (uint16_t x_src, uint16_t y_src,
+VS23S0x0::
+MoveBlock (uint16_t x_src, uint16_t y_src,
 		     uint16_t x_dst, uint16_t y_dst,
 		     uint8_t width, uint8_t height,
 		     uint8_t dir)
@@ -1074,15 +1111,15 @@ VS23S0x0::MoveBlock (uint16_t x_src, uint16_t y_src,
 
   // If the last move was a reverse one, we have to wait until it's
   // finished before we can set the new addresses.
-  if (last_dir)
-    while (!blockFinished()) {
-    }
+//  if (last_dir)
+//    while (!blockFinished()) {
+//    }
   SpiRamWriteBMCtrl (BLOCKMVC1, byteaddress2 >> 1, byteaddress1 >> 1,
 		     ((byteaddress1 & 1) << 1) | ((byteaddress2 & 1) << 2)
 		     | dir | lowpass());
   if (!last_dir)
-    while (!blockFinished()) {
-    }
+//    while (!blockFinished()) {
+//    }
   SpiRamWriteBM2Ctrl ((m_pitch - width) * inc_src, width, height - 1);
   startBlockMove();
   last_dir = dir;
@@ -1112,12 +1149,12 @@ VS23S0x0::fillRectangle (uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2,
   const int width_segs = width / seg_width;
 
   // fill top pixels with background
-  while (!blockFinished()) {}
+  //while (!blockFinished()) {}
   // line at most two chars then duplicate with blitter
   int preset = seg_width + ((width_segs == 1) ? 0 : seg_width);
 
   //   gfx.drawLine(x1, y1, x1 + preset - 1, y1, color);
-  for (int i = x1; i < (x1 + preset - 1); i++)
+  for (int i = x1; i <= (x1 + preset - 1); i++)
     setPixelYuv (i, y1, color);
 
   // Apparently source and destination address have to be
