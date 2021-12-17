@@ -257,6 +257,7 @@ class VS23S0x0
   void begin(bool interlace = false, bool lowpass = false, uint8_t system = 1);
   void SpiRamWriteRegister (uint16_t opcode, uint16_t data);
   uint16_t SpiRamReadRegister (uint16_t opcode);
+  void clearScreen (uint8_t colour);
 
   inline uint16_t width() {
     return XPIXELS;

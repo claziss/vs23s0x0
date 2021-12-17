@@ -141,7 +141,7 @@ static inline void vs23Deselect()
 
 static inline bool blockFinished (void)
 {
-  return VS23_MBLOCK;
+  return (VS23_MBLOCK == LOW) ? true : false;
 }
 
 static inline void startBlockMove (void)
@@ -1054,7 +1054,7 @@ VS23S0x0::setMode (uint8_t mode)
   videoInit(0);
   calibrateVsync();
 
-#if 1
+#if 0
   if (m_pal && F_CPU / m_cycles_per_frame < 45) {
     // We are in PAL mode, but the hardware has an NTSC crystal.
     //m_pal = false;
@@ -1111,15 +1111,15 @@ MoveBlock (uint16_t x_src, uint16_t y_src,
 
   // If the last move was a reverse one, we have to wait until it's
   // finished before we can set the new addresses.
-//  if (last_dir)
-//    while (!blockFinished()) {
-//    }
+  if (last_dir)
+    while (!blockFinished()) {
+    }
   SpiRamWriteBMCtrl (BLOCKMVC1, byteaddress2 >> 1, byteaddress1 >> 1,
 		     ((byteaddress1 & 1) << 1) | ((byteaddress2 & 1) << 2)
 		     | dir | lowpass());
   if (!last_dir)
-//    while (!blockFinished()) {
-//    }
+    while (!blockFinished()) {
+    }
   SpiRamWriteBM2Ctrl ((m_pitch - width) * inc_src, width, height - 1);
   startBlockMove();
   last_dir = dir;
@@ -1149,7 +1149,7 @@ VS23S0x0::fillRectangle (uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2,
   const int width_segs = width / seg_width;
 
   // fill top pixels with background
-  //while (!blockFinished()) {}
+  while (!blockFinished()) {}
   // line at most two chars then duplicate with blitter
   int preset = seg_width + ((width_segs == 1) ? 0 : seg_width);
 
@@ -1177,4 +1177,37 @@ VS23S0x0::fillRectangle (uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2,
       width -= 240;    // at least 5 for the tail below
     }
   MoveBlock(x1, y1, x1, y1 + 1, width, height - 1, 0);
+}
+
+// -----------------------------------------------
+// Fill memory locations of display data with colour, 0x00 would equal black
+
+void
+VS23S0x0::clearScreen (uint8_t color)
+{
+
+#if 0
+  uint32_t address;
+  uint32_t length, i;
+
+  address = pixelAddr (0,0);
+  length =  pixelAddr (width() - 1, height() - 1) - address;
+
+  vs23Select();
+#ifdef SPI_BYTE
+  SPI.transfer (WriteSRAM);
+  SPI.transfer (byte ((address >> 16) & 0xFF ));
+  SPI.transfer (byte ((address >>  8) & 0xFF ));
+  SPI.transfer (byte (address & 0xFF ));
+#else
+  SPI.transfer32 ((WRITE_SRAM << 24) | (address & 0x00ffffff));
+#endif
+
+  for (i = 0; i < length; i++)
+    SPI.transfer (color);
+
+  vs23Deselect();
+#else
+  fillRectangle (0, 0, width(), height(), color);
+#endif
 }
