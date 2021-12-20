@@ -803,7 +803,7 @@ videoBegin (bool interlace, bool lowpass, uint8_t system)
 
   SpiRamWriteRegister (WRITE_GPIO_CTRL, m_gpio_state);
 
-  setMode(4);
+  setMode(1);
 }
 
 void

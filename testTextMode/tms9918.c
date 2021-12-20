@@ -31,25 +31,49 @@ typedef enum
   TMS_MODE_MULTICOLOR,
 } vrEmuTms9918aMode;
 
+
+/*
+ * TMS9918 RGB colors
+ * Color code     Color         R       G       B
+ * 1              black         00      00      00
+ * 2              medium green  0A      AD      1E
+ * 3              light green   34      C8      4C
+ * 4              dark blue     2B      2D      E3
+ * 5              light blue    51      4B      FB
+ * 6              dark red      BD      29      25
+ * 7              cyan          1E      E2      EF
+ * 8              medium red    FB      2C      2B
+ * 9              light red     FF      5F      4C
+ * 10             dark yellow   BD      A2      2B
+ * 11             light yellow  D7      B4      54
+ * 12             dark green    0A      8C      18
+ * 13             magenta       AF      32      9A
+ * 14             gray          B2      B2      B2
+ * 15             white         FF      FF      FF
+ */
+
 typedef enum
 {
-  TMS_TRANSPARENT = -1,
-  TMS_BLACK = 0,
-  TMS_MED_GREEN = 8*16 + 5,
-  TMS_LT_GREEN = 8*16 + 9,
-  TMS_DK_BLUE = 4*16 + 3,
-  TMS_LT_BLUE = 4*16 + 9,
-  TMS_DK_RED = 14*16,
-  TMS_CYAN = 5*16 + 8,
-  TMS_MED_RED = 14*16 + 5,
-  TMS_LT_RED = 14*16 + 9,
-  TMS_DK_YELLOW = 11*16,
-  TMS_LT_YELLOW = 10*16,
-  TMS_DK_GREEN = 12*16,
-  TMS_MAGENTA = 6*16+6,
-  TMS_GREY = 10,
-  TMS_WHITE = 15,
+  TMS_TRANSPARENT,
+  TMS_BLACK,
+  TMS_MED_GREEN,
+  TMS_LT_GREEN,
+  TMS_DK_BLUE,
+  TMS_LT_BLUE,
+  TMS_DK_RED,
+  TMS_CYAN,
+  TMS_MED_RED,
+  TMS_LT_RED,
+  TMS_DK_YELLOW,
+  TMS_LT_YELLOW,
+  TMS_DK_GREEN,
+  TMS_MAGENTA,
+  TMS_GREY,
+  TMS_WHITE
 } vrEmuTms9918aColor;
+
+static uint8_t colorLUT[] = {200, 0, 22, 24, 84, 70, 164, 90, 166, 168, 169, 171,
+  21, 38, 8, 15};
 
 #define TMS9918A_PIXELS_X 256
 #define TMS9918A_PIXELS_Y 192
@@ -149,7 +173,7 @@ tms9918aTextMode (void)
   vrEmuTms9918aColor fgColor = tmsMainFgColor ();
 
   //FIXME Set BG
-  clearScreen (bgColor);
+  clearScreen (colorLUT[bgColor]);
   for (uint16_t y = 0;  y < height(); y++)
     {
       int textRow = y / 8;
@@ -166,7 +190,8 @@ tms9918aTextMode (void)
 	    {
 	      //EXTEND: Each Char has it's own BG & effects.
 	      if (patternByte & 0x80) // BG is set globaly
-		setPixelYuv (tileX * TEXT_CHAR_WIDTH + i, y, fgColor);
+		setPixelYuv (tileX * TEXT_CHAR_WIDTH + i + 8, y,
+			     colorLUT[fgColor]);
 	      patternByte <<= 1;
 	    }
 	}
@@ -297,5 +322,5 @@ tms9918aInit (void)
   tms9918a.lastMode = 0;
   tms9918a.currentAddress = 0;
   tms9918a.mode = TMS_MODE_TEXT;
-  videoBegin (false, false, 1);
+  videoBegin (false, true, 1);
 }
