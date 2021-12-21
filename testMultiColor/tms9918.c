@@ -72,7 +72,7 @@ typedef enum
   TMS_WHITE
 } vrEmuTms9918aColor;
 
-static uint8_t colorLUT[] = {200, 0, 22, 24, 84, 70, 164, 90, 166, 168, 169, 171,
+static const uint8_t colorLUT[] = {200, 0, 22, 24, 84, 70, 164, 90, 166, 168, 169, 171,
   21, 38, 8, 15};
 
 #define TMS9918A_PIXELS_X 256
@@ -406,6 +406,7 @@ tms9918aGraphicsIMode (void)
 void
 tms9918aDisplay (void)
 {
+  tms9918a.mode = tmsMode(); 
   switch (tms9918a.mode)
     {
     case TMS_MODE_GRAPHICS_I:

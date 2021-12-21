@@ -54,7 +54,7 @@ void setup () {
 
   /* 1. Initialize MultiColor Mode.  */
   tms9918aWriteReg (0, 0);    /* Multicolor mode, no external video.  */
-  tms9918aWriteReg (1, 0xcb); /* 16k, enable disp, disable int, 16x16 sprites, Mag.on  */
+  tms9918aWriteReg (1, 0xcb); /* 16k, enable disp, disable int */
   tms9918aWriteReg (2, 0x05); /* Address of Name Table in VRAM = 0x1400.  */
   tms9918aWriteReg (4, 0x01); /* Address of Pattern Table in VRAM = 0x800. */
   tms9918aWriteReg (5, 0x20); /* Address of Sprite Attribute Table in VRAM = 0x1000. */
