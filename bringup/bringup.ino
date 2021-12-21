@@ -61,6 +61,8 @@ enum colorid
     white,
   };
 
+//uint8_t plasma[256][200];
+
 VS23S0x0 vs23;
 static const byte CH0	= 0x00;
 static const byte CH1	= 0x01;
@@ -92,7 +94,7 @@ static void Mandelbrot (uint8_t channel, float Xn, float Xp, float Yn, float Yp)
 	      x = xtemp;
 	      iteration++;
 	    }
-	  vs23.setPixelYuv (Px, Py, (iteration & 0xff) + 0x20);
+	  vs23.setPixelYuv (Px, Py, (iteration & 0x0f)+ 0x20);
 	}
     }
 }
@@ -112,6 +114,8 @@ void setup() {
   pinMode (nHOLD_PIN, OUTPUT);
   digitalWrite (nHOLD_PIN, HIGH);
 
+  pinMode(VS23_MVBLK_PIN, INPUT);
+
   // Config SPI interface
   pinMode (VS23_CS_PIN, OUTPUT);
   VS23_DESELECT; //digitalWrite (VS23_CS_PIN, HIGH);
@@ -119,12 +123,12 @@ void setup() {
   digitalWrite (MEMF_CS_PIN, HIGH);
 
   SPI.begin();
-  SPI.setClockDivider (SPI_CLOCK_DIV2); //MAX speed
+  SPI.setClockDivider (SPI_CLOCK_DIV2); //MAX speed -> 2
   SPI.setDataMode (SPI_MODE0);
   SPI.setBitOrder (MSBFIRST) ;
 
   // Setup VS23S0x0 chip
-  vs23.begin(false, false, 1);
+  vs23.begin(false, true, 1);
 
   Serial.println (F("Configuration done."));
 }
@@ -178,7 +182,26 @@ void loop() {
   while (Serial.available() == 0) {};
   Serial.read();
 
+  vs23.clearScreen (7);
+
+#define XSIZEREC vs23.width()/16
+#define YSIZEREC vs23.height()/16
+
+  Serial.println("Draw colour map test image");
+  uint8_t cc = 0;
+  for (j=0; j<16; j++)
+    for (i=0; i<16; i++)
+      {
+	vs23.fillRectangle ((i*XSIZEREC), (j*YSIZEREC),
+			    (i*XSIZEREC)+(XSIZEREC-1),
+			    (j*YSIZEREC)+(YSIZEREC-1), cc++);
+      }
+  Serial.println(F("Display Image [press key]") );
+  while (Serial.available() == 0) {};
+  Serial.read();
+
   start_time = millis();
+
   uint16_t x = 0;
   uint16_t y = 0;
   for (i = 0; i < vs23.height(); i++)
@@ -197,6 +220,8 @@ void loop() {
     for (j = x; j < 3 * vs23.width()/8; j++)
       vs23.setPixelRgb (j, i, 0x00, 0x00, 0xff);
 
+  current_time = millis();
+
   for (int k = 0; k < 15; k++)
     {
       x = 3 * vs23.width()/8;
@@ -212,8 +237,6 @@ void loop() {
     }
 
 
-  current_time = millis();
-
   Serial.print (F("RGB bars duration [msec]"));
   Serial.println (current_time - start_time);
 
@@ -221,41 +244,45 @@ void loop() {
   Serial.println(F("4 YUV Pixel [press key]") );
 
   x = 4 * vs23.width()/8;
-  y = 0;
-  for (i = y; i < vs23.height(); i++)
-    for (j = x; j < 5 * vs23.width()/8; j++)
-      vs23.setPixelYuv (j, i, 169); //0x24
+  vs23.fillRectangle (x, 0, (5*vs23.width()+8)/8-1, vs23.height(), 0x24);
 
   x = 5 * vs23.width()/8;
-  y = 0;
-  for (i = y; i < vs23.height(); i++)
-    for (j = x; j < 6 * vs23.width()/8; j++)
-      vs23.setPixelYuv (j, i, 155); //0x94
+  vs23.fillRectangle (x, 0, (6*vs23.width()+8)/8-1, vs23.height(), 0x94);
 
   x = 6 * vs23.width()/8;
-  y = 0;
-  for (i = y; i < vs23.height(); i++)
-    for (j = x; j < 7 * vs23.width()/8; j++)
-      vs23.setPixelYuv (j, i, 83); //0x54
+  vs23.fillRectangle (x, 0, (7*vs23.width()+8)/8-1, vs23.height(), 0xbf);
 
-//  while (1)
-//    {
-//  while (Serial.available() == 0) {};
-//      uint8_t a = Serial.read();
-//      uint8_t b = Serial.read();
-//      uint8_t c = Serial.read();
-//
-//      uint8_t read = (a - '0') * 100 + (b - '0') * 10 + (c - '0');
-//      Serial.println (read, DEC);
-//  while (Serial.available() == 0) {};
-//      Serial.read();
-//
-//      x = 7 * vs23.width()/8;
-//      y = 0;
-//      for (i = y; i < vs23.height(); i++)
-//	for (j = x; j < 8 * vs23.width()/8; j++)
-//	  vs23.setPixelYuv (j, i, read); //0xbf
-//    };
+  x = 7 * vs23.width()/8;
+  vs23.fillRectangle (x, 0, vs23.width(), vs23.height(), 83);
+
+  delay(10);
+  //Plasma
+  #if 0
+  for (x = 0; x < vs23.width(); x++)
+    for (y = 0; y < vs23.height(); y++)
+      {
+	float fcolor = 128.0 + (128.0 * sin (x / 16.0)) +
+	  128.0 + (128.0 * sin (y / 16.0));
+	uint8_t color = (uint8_t) fcolor >> 1;
+	plasma[x][y] = color;
+      }
+#endif
+  while (Serial.available() == 0)
+    {
+      uint8_t palleteShift = random (0, 255);
+      for (y = 0; y < vs23.height(); y++)
+	{
+	  for (x = 0; x < vs23.width(); x++)
+	    {
+	      float fcolor = 128.0 + (128.0 * sin (x / 16.0)) +
+		128.0 + (128.0 * sin (y / 16.0));
+	      uint8_t color = (uint8_t) fcolor + palleteShift;
+	      vs23.setPixelRgb (x, y,
+				color, color*2, 255-color);
+	    }
+	}
+    }
+  Serial.read();
   Serial.println(F("End of test! [Restart press key]"));
   delay(1);
   while (Serial.available() == 0) {};

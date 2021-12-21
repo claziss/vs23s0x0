@@ -96,28 +96,35 @@ void loop () {
   while (Serial.available() == 0) {};
   Serial.read();
 
+#if 0
   pmsg = (char *) ball;
   tms9918aWriteAddr (addrNameTable);
-  while (*pmsg != 0)
+  int line = 0;
+  while (*pmsg != 0 || (line < (24 * 32)))
     {
       char chr = *pmsg++;
       tms9918aWriteData (chr);
+      line++;
     }
   tms9918aDisplay ();
   Serial.println(F("Next"));
   delay(1);
   while (Serial.available() == 0) {};
   Serial.read();
+#endif
 
-  tms9918aWriteAddr (0xc00);
-  for (int i = 0; i < 32; i++)
+  while (Serial.available () == 0)
     {
-      uint8_t val = tms9918aVramValue (0xc00 + i);
-      val = ((val >> 4) + 1) % 16;
-      tms9918aWriteData ((val << 4) | 1);
+      tms9918aWriteAddr (0xc00);
+      for (int i = 0; i < 32; i++)
+	{
+	  uint8_t val = tms9918aVramValue (0xc00 + i);
+	  val = ((val >> 4) + 1) % 16;
+	  tms9918aWriteData ((val << 4) | i%16 );
+	}
+      tms9918aDisplay ();
     }
-  tms9918aWriteReg (7, 0xf6); /* White text on Light Blue Background.  */
-  tms9918aDisplay ();
+  Serial.read();
 
   Serial.println(F("End of test! [Restart press key]"));
   delay(1);
